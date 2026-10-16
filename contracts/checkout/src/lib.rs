@@ -10,10 +10,15 @@ use soroban_sdk::token::TokenClient;
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, MuxedAddress};
 
 use crate::errors::Error;
-use crate::events::{OrderCreated, OrderRefunded, OrderShipped, PaymentReceived};
+use crate::events::{
+    MerchantChangedV1, OrderCreated, OrderRefunded, OrderShipped, PaymentReceived,
+    TokenAllowlistChangedV1,
+};
 use crate::order::{Order, Status};
 use crate::storage::{
-    get_admin, get_order, has_admin, is_token_allowed, set_admin, set_order, set_token_allowed,
+    get_admin, get_approval_policy, get_order, has_admin, is_token_allowed, remove_approval_policy,
+    set_admin, set_approval_policy as store_approval_policy, set_order, set_token_allowed,
+    ApprovalPolicy,
 };
 
 #[contract]
@@ -38,6 +43,11 @@ impl Checkout {
         let admin = get_admin(&env)?;
         admin.require_auth();
         set_admin(&env, &new_merchant);
+        MerchantChangedV1 {
+            previous_merchant: admin,
+            new_merchant,
+        }
+        .publish(&env);
         Ok(())
     }
 
@@ -52,7 +62,14 @@ impl Checkout {
     pub fn add_token(env: Env, token: Address) -> Result<(), Error> {
         let admin = get_admin(&env)?;
         admin.require_auth();
-        set_token_allowed(&env, &token, true);
+        if !is_token_allowed(&env, &token) {
+            set_token_allowed(&env, &token, true);
+            TokenAllowlistChangedV1 {
+                token,
+                allowed: true,
+            }
+            .publish(&env);
+        }
         Ok(())
     }
 
@@ -60,8 +77,53 @@ impl Checkout {
     pub fn remove_token(env: Env, token: Address) -> Result<(), Error> {
         let admin = get_admin(&env)?;
         admin.require_auth();
-        set_token_allowed(&env, &token, false);
+        if is_token_allowed(&env, &token) {
+            set_token_allowed(&env, &token, false);
+            TokenAllowlistChangedV1 {
+                token,
+                allowed: false,
+            }
+            .publish(&env);
+        }
         Ok(())
+    }
+
+    /// Require a second signer to approve releases at or above `threshold`.
+    /// Thresholds use raw units for the selected token. Both the merchant and
+    /// approver must authorize each qualifying dispatch or refund transaction.
+    pub fn set_approval_policy(
+        env: Env,
+        token: Address,
+        threshold: i128,
+        approver: Address,
+    ) -> Result<(), Error> {
+        let admin = get_admin(&env)?;
+        admin.require_auth();
+        if threshold <= 0 || admin == approver || !is_token_allowed(&env, &token) {
+            return Err(Error::InvalidApprovalPolicy);
+        }
+        store_approval_policy(
+            &env,
+            &token,
+            &ApprovalPolicy {
+                threshold,
+                approver,
+            },
+        );
+        Ok(())
+    }
+
+    /// Disable the second-signer requirement for a token. Only the merchant can call this.
+    pub fn clear_approval_policy(env: Env, token: Address) -> Result<(), Error> {
+        let admin = get_admin(&env)?;
+        admin.require_auth();
+        remove_approval_policy(&env, &token);
+        Ok(())
+    }
+
+    /// Read the optional high-value approval policy configured for a token.
+    pub fn approval_policy(env: Env, token: Address) -> Option<ApprovalPolicy> {
+        get_approval_policy(&env, &token)
     }
 
     /// Query whether a token contract is accepted for payments.
@@ -141,6 +203,11 @@ impl Checkout {
     ) -> Result<(), Error> {
         buyer.require_auth();
 
+        // Check initialization before token validation so callers receive the
+        // actionable contract-state error when the merchant has not configured
+        // the checkout contract yet.
+        let merchant = get_admin(&env)?;
+
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -148,11 +215,13 @@ impl Checkout {
             return Err(Error::TokenNotAllowed);
         }
 
-        let merchant = get_admin(&env)?;
-
-        // A previous pay/refund cannot be superseded; a pending order can.
+        // Pending order terms are immutable once registered by the buyer.
         if let Some(existing) = get_order(&env, &order_id) {
-            if existing.status != Status::Pending {
+            if existing.status == Status::Pending {
+                if existing.buyer != buyer || existing.token != token || existing.amount != amount {
+                    return Err(Error::OrderTermsMismatch);
+                }
+            } else {
                 return Err(Error::OrderAlreadyPaid);
             }
         }
@@ -163,7 +232,7 @@ impl Checkout {
         // transfer is derived from this invocation (it holds the funds).
         token_client.transfer(
             &buyer,
-            &MuxedAddress::from(&env.current_contract_address()),
+            MuxedAddress::from(&env.current_contract_address()),
             &amount,
         );
 
@@ -201,13 +270,14 @@ impl Checkout {
         if order.status != Status::Paid {
             return Err(Error::InvalidOrderStatus);
         }
+        require_high_value_approval(&env, &merchant, &order)?;
 
         let token_client = TokenClient::new(&env, &order.token);
 
         // Release: contract -> merchant.
         token_client.transfer(
             &env.current_contract_address(),
-            &MuxedAddress::from(&merchant),
+            MuxedAddress::from(&merchant),
             &order.amount,
         );
 
@@ -243,13 +313,14 @@ impl Checkout {
         if order.status != Status::Paid {
             return Err(Error::InvalidOrderStatus);
         }
+        require_high_value_approval(&env, &merchant, &order)?;
 
         let token_client = TokenClient::new(&env, &order.token);
 
         // Refund: contract -> buyer.
         token_client.transfer(
             &env.current_contract_address(),
-            &MuxedAddress::from(&order.buyer),
+            MuxedAddress::from(&order.buyer),
             &order.amount,
         );
 
@@ -290,4 +361,16 @@ impl Checkout {
             None => false,
         }
     }
+}
+
+fn require_high_value_approval(env: &Env, merchant: &Address, order: &Order) -> Result<(), Error> {
+    if let Some(policy) = get_approval_policy(env, &order.token) {
+        if order.amount >= policy.threshold {
+            if policy.approver == *merchant {
+                return Err(Error::InvalidApprovalPolicy);
+            }
+            policy.approver.require_auth();
+        }
+    }
+    Ok(())
 }

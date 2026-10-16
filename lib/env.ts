@@ -5,6 +5,12 @@
  * that required configuration is present at runtime.
  */
 
+import {
+  expectedNetworkPassphrase,
+  isStellarNetwork,
+  type StellarNetwork,
+} from "./stellar/config";
+
 // =============================================================================
 // TYPE DEFINITIONS
 // =============================================================================
@@ -35,32 +41,27 @@ export interface FirebaseConfig {
   measurementId?: string;
 }
 
-export interface AdminConfig {
-  adminEmails: string[];
-}
-
 export interface EnvConfig {
   stellar: StellarConfig;
   emailjs: EmailJSConfig;
   firebase: FirebaseConfig;
-  admin: AdminConfig;
 }
 
 // =============================================================================
 // DEFAULTS
 // =============================================================================
 
+// Keep docs/NETWORK_CONFIGURATION.md in sync with these server-side defaults.
 const STELLAR_DEFAULTS = {
   testnet: {
     rpcUrl: "https://soroban-testnet.stellar.org",
-    networkPassphrase: "Test SDF Network ; September 2015",
+    networkPassphrase: expectedNetworkPassphrase("testnet"),
     usdcContractId: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA",
-    nativeAssetContractId:
-      "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+    nativeAssetContractId: "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
   },
   mainnet: {
     rpcUrl: "https://soroban-rpc.mainnet.stellar.gateway.fm",
-    networkPassphrase: "Public Global Stellar Network ; September 2015",
+    networkPassphrase: expectedNetworkPassphrase("mainnet"),
     usdcContractId: "", // Must be configured for mainnet
     nativeAssetContractId: "", // Must be configured for mainnet
   },
@@ -75,14 +76,53 @@ type ValidationError = {
   message: string;
 };
 
+const REQUIRED_ENV = {
+  checkoutContractId: {
+    name: "NEXT_PUBLIC_CHECKOUT_CONTRACT_ID",
+    context: "Stellar payments",
+  },
+  emailJsServiceId: {
+    name: "NEXT_PUBLIC_EMAILJS_SERVICE_ID",
+    context: "email notifications",
+  },
+  emailJsTemplateId: {
+    name: "NEXT_PUBLIC_EMAILJS_TEMPLATE_ID",
+    context: "email notifications",
+  },
+  emailJsPublicKey: {
+    name: "NEXT_PUBLIC_EMAILJS_PUBLIC_KEY",
+    context: "email notifications",
+  },
+  firebaseApiKey: {
+    name: "NEXT_PUBLIC_FIREBASE_API_KEY",
+    context: "Firebase authentication",
+  },
+  firebaseAuthDomain: {
+    name: "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
+    context: "Firebase authentication",
+  },
+  firebaseProjectId: {
+    name: "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
+    context: "Firebase database",
+  },
+  firebaseStorageBucket: {
+    name: "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
+    context: "Firebase storage",
+  },
+  firebaseAppId: {
+    name: "NEXT_PUBLIC_FIREBASE_APP_ID",
+    context: "Firebase app",
+  },
+} as const;
+
 /**
  * Validates that a required environment variable is set.
  */
 function requireEnv(
-  name: string,
-  errors: ValidationError[],
-  context: string
+  requirement: (typeof REQUIRED_ENV)[keyof typeof REQUIRED_ENV],
+  errors: ValidationError[]
 ): string {
+  const { name, context } = requirement;
   const value = process.env[name];
   if (!value || value.trim() === "") {
     errors.push({
@@ -109,31 +149,40 @@ function getEnv(name: string, defaultValue: string = ""): string {
 /**
  * Loads and validates Stellar configuration.
  */
-export function loadStellarConfig(
-  errors: ValidationError[] = []
-): StellarConfig {
-  const network = (getEnv("NEXT_PUBLIC_STELLAR_NETWORK", "testnet") ||
-    "testnet") as "testnet" | "mainnet";
+export function loadStellarConfig(errors: ValidationError[] = []): StellarConfig {
+  const configuredNetwork = getEnv("NEXT_PUBLIC_STELLAR_NETWORK", "testnet");
+  let network: StellarNetwork;
+  if (isStellarNetwork(configuredNetwork)) {
+    network = configuredNetwork;
+  } else {
+    errors.push({
+      field: "NEXT_PUBLIC_STELLAR_NETWORK",
+      message: "must be either testnet or mainnet",
+    });
+    network = "testnet";
+  }
   const defaults = STELLAR_DEFAULTS[network];
 
-  const checkoutContractId = requireEnv(
-    "NEXT_PUBLIC_CHECKOUT_CONTRACT_ID",
-    errors,
-    "Stellar payments"
-  );
+  const configuredPassphrase = getEnv("NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE");
+  const expectedPassphrase = expectedNetworkPassphrase(network);
+  if (configuredPassphrase && configuredPassphrase !== expectedPassphrase) {
+    errors.push({
+      field: "NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE",
+      message: `must match the configured ${network} network`,
+    });
+  }
+
+  const checkoutContractId = requireEnv(REQUIRED_ENV.checkoutContractId, errors);
 
   return {
     network,
     rpcUrl: getEnv("NEXT_PUBLIC_STELLAR_RPC_URL", defaults.rpcUrl),
-    networkPassphrase: getEnv(
-      "NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE",
-      defaults.networkPassphrase
-    ),
+    networkPassphrase:
+      configuredPassphrase === expectedPassphrase
+        ? configuredPassphrase
+        : defaults.networkPassphrase,
     checkoutContractId,
-    usdcContractId: getEnv(
-      "NEXT_PUBLIC_USDC_CONTRACT_ID",
-      defaults.usdcContractId
-    ),
+    usdcContractId: getEnv("NEXT_PUBLIC_USDC_CONTRACT_ID", defaults.usdcContractId),
     nativeAssetContractId: getEnv(
       "NEXT_PUBLIC_NATIVE_ASSET_CONTRACT_ID",
       defaults.nativeAssetContractId
@@ -144,25 +193,11 @@ export function loadStellarConfig(
 /**
  * Loads and validates EmailJS configuration.
  */
-export function loadEmailJSConfig(
-  errors: ValidationError[] = []
-): EmailJSConfig {
+export function loadEmailJSConfig(errors: ValidationError[] = []): EmailJSConfig {
   return {
-    serviceId: requireEnv(
-      "NEXT_PUBLIC_EMAILJS_SERVICE_ID",
-      errors,
-      "email notifications"
-    ),
-    templateId: requireEnv(
-      "NEXT_PUBLIC_EMAILJS_TEMPLATE_ID",
-      errors,
-      "email notifications"
-    ),
-    publicKey: requireEnv(
-      "NEXT_PUBLIC_EMAILJS_PUBLIC_KEY",
-      errors,
-      "email notifications"
-    ),
+    serviceId: requireEnv(REQUIRED_ENV.emailJsServiceId, errors),
+    templateId: requireEnv(REQUIRED_ENV.emailJsTemplateId, errors),
+    publicKey: requireEnv(REQUIRED_ENV.emailJsPublicKey, errors),
     defaultRecipientEmail: getEnv("NEXT_PUBLIC_DEFAULT_RECIPIENT_EMAIL"),
   };
 }
@@ -170,47 +205,16 @@ export function loadEmailJSConfig(
 /**
  * Loads and validates Firebase configuration.
  */
-export function loadFirebaseConfig(
-  errors: ValidationError[] = []
-): FirebaseConfig {
+export function loadFirebaseConfig(errors: ValidationError[] = []): FirebaseConfig {
   return {
-    apiKey: requireEnv(
-      "NEXT_PUBLIC_FIREBASE_API_KEY",
-      errors,
-      "Firebase authentication"
-    ),
-    authDomain: requireEnv(
-      "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN",
-      errors,
-      "Firebase authentication"
-    ),
-    projectId: requireEnv(
-      "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
-      errors,
-      "Firebase database"
-    ),
-    storageBucket: requireEnv(
-      "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET",
-      errors,
-      "Firebase storage"
-    ),
+    apiKey: requireEnv(REQUIRED_ENV.firebaseApiKey, errors),
+    authDomain: requireEnv(REQUIRED_ENV.firebaseAuthDomain, errors),
+    projectId: requireEnv(REQUIRED_ENV.firebaseProjectId, errors),
+    storageBucket: requireEnv(REQUIRED_ENV.firebaseStorageBucket, errors),
     messagingSenderId: getEnv("NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID"),
-    appId: requireEnv("NEXT_PUBLIC_FIREBASE_APP_ID", errors, "Firebase app"),
+    appId: requireEnv(REQUIRED_ENV.firebaseAppId, errors),
     measurementId: getEnv("NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID"),
   };
-}
-
-/**
- * Loads admin configuration.
- */
-export function loadAdminConfig(): AdminConfig {
-  const adminEmailsRaw = getEnv("NEXT_PUBLIC_ADMIN_EMAILS", "");
-  const adminEmails = adminEmailsRaw
-    .split(",")
-    .map((email) => email.trim().toLowerCase())
-    .filter((email) => email !== "");
-
-  return { adminEmails };
 }
 
 // =============================================================================
@@ -227,7 +231,6 @@ export function validateEnv(): EnvConfig {
   const stellar = loadStellarConfig(errors);
   const emailjs = loadEmailJSConfig(errors);
   const firebase = loadFirebaseConfig(errors);
-  const admin = loadAdminConfig();
 
   if (errors.length > 0) {
     const errorList = errors.map((e) => `  - ${e.field}: ${e.message}`).join("\n");
@@ -237,16 +240,32 @@ export function validateEnv(): EnvConfig {
     );
   }
 
-  return { stellar, emailjs, firebase, admin };
+  return { stellar, emailjs, firebase };
 }
 
+export type EnvironmentDiagnostics = {
+  stellarNetwork: "testnet" | "mainnet" | "unknown";
+  requiredVariables: { name: string; configured: boolean }[];
+};
+
 /**
- * Checks if a user email is in the admin list.
+ * Returns safe environment metadata for the development-only diagnostics page.
+ * Environment values are deliberately never included in the result.
  */
-export function isAdminEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const { adminEmails } = loadAdminConfig();
-  return adminEmails.includes(email.toLowerCase());
+export function getEnvironmentDiagnostics(): EnvironmentDiagnostics {
+  const configuredNetwork = getEnv("NEXT_PUBLIC_STELLAR_NETWORK", "testnet");
+  const stellarNetwork =
+    configuredNetwork === "testnet" || configuredNetwork === "mainnet"
+      ? configuredNetwork
+      : "unknown";
+
+  return {
+    stellarNetwork,
+    requiredVariables: Object.values(REQUIRED_ENV).map(({ name }) => ({
+      name,
+      configured: Boolean(process.env[name]?.trim()),
+    })),
+  };
 }
 
 /**

@@ -22,7 +22,10 @@ const steps = [
 
 const Stellar = () => {
   return (
-    <section id="stellar" className="bg-gradient-to-r from-red-900 via-red-700 to-red-600 py-16 px-6">
+    <section
+      id="stellar"
+      className="bg-gradient-to-r from-red-900 via-red-700 to-red-600 py-16 px-6"
+    >
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center gap-10">
         <div className="md:w-1/2 text-center md:text-left">
           <div className="inline-flex items-center gap-2 bg-white/15 rounded-full px-4 py-1.5 mb-5 text-sm font-medium text-white">
@@ -30,36 +33,33 @@ const Stellar = () => {
             Crypto checkout, built in
           </div>
           <h2 className="text-4xl sm:text-5xl font-extrabold text-white mb-4">
-            Pay With Stellar
+            The payment rail for open commerce
           </h2>
           <p className="text-white/90 text-lg leading-relaxed mb-8">
-            Pay for your order in USDC on the Stellar network — no card fees,
-            no bank delays, no middleman. This is a live demonstration of how
-            Stellar payments can power any e-commerce store: fast settlement,
-            verifiable receipts, and costs that traditional processors can't match.
+            ShoeSafari is a live online footwear store, not a payment demo. We have processed more
+            than $10,000 USDC in product sales on Stellar. Choose USDC at checkout and approve the
+            payment from your own Freighter wallet.
           </p>
           <ul className="space-y-4 text-white/90 mb-8 text-left">
             <li className="flex items-start gap-3">
               <span className="mt-1.5 h-2 w-2 rounded-full bg-white flex-shrink-0" />
               <span>
-                <strong className="text-white">Settles in seconds</strong> —
-                transfers usually confirm almost instantly, not in days.
+                <strong className="text-white">Fast settlement</strong> — payments confirm in
+                seconds, so commerce does not have to wait for traditional banking rails.
               </span>
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1.5 h-2 w-2 rounded-full bg-white flex-shrink-0" />
               <span>
-                <strong className="text-white">Fraction-of-a-cent fees</strong>{" "}
-                — send USDC anywhere for pennies, with no card network to slow
-                things down.
+                <strong className="text-white">Low-cost payments</strong> — Stellar keeps
+                transaction costs tiny and predictable.
               </span>
             </li>
             <li className="flex items-start gap-3">
               <span className="mt-1.5 h-2 w-2 rounded-full bg-white flex-shrink-0" />
               <span>
-                <strong className="text-white">Verified by smart contract</strong>{" "}
-                — the exact amount moves to our merchant wallet and a payment
-                event is recorded on the ledger.
+                <strong className="text-white">Recorded on-chain</strong> — payment transactions are
+                recorded on the public Stellar ledger and can be independently verified.
               </span>
             </li>
           </ul>
@@ -67,14 +67,12 @@ const Stellar = () => {
             href="/shop"
             className="inline-block bg-white text-red-700 font-semibold px-6 py-3 rounded-md hover:bg-white/90"
           >
-            Shop &amp; Pay with USDC
+            Shop Footwear
           </Link>
         </div>
 
         <div className="md:w-1/2 w-full bg-white rounded-xl p-8 shadow-2xl">
-          <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">
-            How it works
-          </h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-6 text-center">How it works</h3>
           <ol className="space-y-6">
             {steps.map((step, index) => (
               <li key={index} className="flex gap-4">

@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { login, loginWithGoogle, signup } from "../../../lib/auth";
+import { login, loginWithGoogle, resetPassword, signup } from "../../../lib/auth";
+import { getSafeLoginRedirect } from "../../../lib/authRedirect";
 import Toast from "../../../components/Toast";
 import { AiOutlineLoading3Quarters } from "react-icons/ai";
 import { FcGoogle } from "react-icons/fc";
@@ -16,27 +17,21 @@ const AuthPage = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isSigningUp, setIsSigningUp] = useState(false);
+  const [isGoogleLoggingIn, setIsGoogleLoggingIn] = useState(false);
+  const googleLoginInFlight = useRef(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoginMode, setIsLoginMode] = useState(true);
 
   const showToast = (message) => {
     setToast({ show: true, message });
-    setTimeout(() => setToast({ show: false, message: "" }), 3000);
   };
 
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Get redirect URL from query params, default to /shop
-  const getRedirectUrl = () => {
-    const redirect = searchParams.get("redirect");
-    // Only allow internal redirects (starting with /)
-    if (redirect && redirect.startsWith("/")) {
-      return redirect;
-    }
-    return "/shop";
-  };
+  const getRedirectUrl = () => getSafeLoginRedirect(searchParams.get("redirect"));
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoggingIn(true);
@@ -74,13 +69,39 @@ const AuthPage = () => {
     }
   };
 
+  const handlePasswordReset = async () => {
+    if (!email.trim()) {
+      showToast("Enter your email address to request a password reset.");
+      return;
+    }
+    setIsResettingPassword(true);
+    try {
+      await resetPassword(email.trim());
+      showToast("If an account exists for that email, a password reset link will be sent.");
+    } catch (err) {
+      const message = err.message?.includes("auth/invalid-email")
+        ? "Enter a valid email address."
+        : "We couldn't send a reset link right now. Please try again.";
+      showToast(message);
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
   const handleGoogleLogin = async () => {
+    if (isLoggingIn || isSigningUp || googleLoginInFlight.current) return;
+
+    googleLoginInFlight.current = true;
+    setIsGoogleLoggingIn(true);
     try {
       await loginWithGoogle();
       showToast("User logged in with Google successfully");
       router.push(getRedirectUrl());
     } catch (err) {
       showToast(err.message);
+    } finally {
+      googleLoginInFlight.current = false;
+      setIsGoogleLoggingIn(false);
     }
   };
 
@@ -125,6 +146,17 @@ const AuthPage = () => {
                   required
                 />
               </div>
+              {isLoginMode && (
+                <button
+                  type="button"
+                  onClick={handlePasswordReset}
+                  disabled={isResettingPassword}
+                  aria-busy={isResettingPassword}
+                  className="text-sm text-red-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 disabled:opacity-60"
+                >
+                  {isResettingPassword ? "Sending reset link..." : "Forgot password?"}
+                </button>
+              )}
               <div className="relative">
                 <label
                   htmlFor="password"
@@ -143,13 +175,15 @@ const AuthPage = () => {
                 />
                 <button
                   type="button"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
                   onClick={togglePasswordVisibility}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center pt-6 text-gray-500"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center pt-6 text-gray-500 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
                 >
                   {showPassword ? (
-                    <FaRegEye size={20} />
+                    <FaRegEye aria-hidden="true" size={20} />
                   ) : (
-                    <FaRegEyeSlash size={20} />
+                    <FaRegEyeSlash aria-hidden="true" size={20} />
                   )}
                 </button>
               </div>
@@ -172,13 +206,19 @@ const AuthPage = () => {
                   />
                   <button
                     type="button"
+                    aria-label={
+                      showConfirmPassword
+                        ? "Hide confirm password"
+                        : "Show confirm password"
+                    }
+                    aria-pressed={showConfirmPassword}
                     onClick={toggleConfirmPasswordVisibility}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center pt-6 text-gray-500"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center pt-6 text-gray-500 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
                   >
                     {showConfirmPassword ? (
-                      <FaRegEye size={20} />
+                      <FaRegEye aria-hidden="true" size={20} />
                     ) : (
-                      <FaRegEyeSlash size={20} />
+                      <FaRegEyeSlash aria-hidden="true" size={20} />
                     )}
                   </button>
                 </div>
@@ -187,7 +227,7 @@ const AuthPage = () => {
                 <button
                   type="submit"
                   className="w-full bg-red-600 text-white py-2 px-4 rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 flex items-center justify-center"
-                  disabled={isLoggingIn || isSigningUp}
+                  disabled={isLoggingIn || isSigningUp || isGoogleLoggingIn}
                 >
                   {isLoggingIn || isSigningUp ? (
                     <>
@@ -206,11 +246,21 @@ const AuthPage = () => {
             <div className="flex justify-center items-center">
               <button
                 onClick={handleGoogleLogin}
-                className="w-full flex items-center bg-red-600 text-white py-2 px-4 rounded-md shadow-sm hover:bg-red-700 focus:outline-none "
+                type="button"
+                disabled={isLoggingIn || isSigningUp || isGoogleLoggingIn}
+                aria-busy={isGoogleLoggingIn}
+                className="w-full flex items-center bg-red-600 text-white py-2 px-4 rounded-md shadow-sm hover:bg-red-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-70"
               >
-                <FcGoogle size={28} />
-                <span className="flex-grow text-center">
-                  Continue with Google
+                {isGoogleLoggingIn ? (
+                  <AiOutlineLoading3Quarters
+                    className="animate-spin mr-2"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <FcGoogle size={28} aria-hidden="true" />
+                )}
+                <span className="flex-grow text-center" aria-live="polite">
+                  {isGoogleLoggingIn ? "Connecting to Google..." : "Continue with Google"}
                 </span>
               </button>
             </div>

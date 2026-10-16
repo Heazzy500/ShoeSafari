@@ -18,4 +18,8 @@ pub enum Error {
     OrderNotFound = 6,
     /// The order is not in a state that allows this transition.
     InvalidOrderStatus = 7,
+    /// Payment terms do not match the buyer, token, and amount registered for the order.
+    OrderTermsMismatch = 8,
+    /// The optional high-value approval policy is invalid or has conflicting signers.
+    InvalidApprovalPolicy = 9,
 }

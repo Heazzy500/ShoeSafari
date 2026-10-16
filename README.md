@@ -1,10 +1,10 @@
 <div align="center">
 
-# ShoeSafari — Stellar Storefront Reference Architecture
+# ShoeSafari — Online Footwear Store on Stellar
 
-**An open-source retail storefront built on the Stellar network**
+**A real, operating footwear store — not a demo — with Stellar USDC checkout**
 
-[![CI](https://github.com/yourusername/shoesafari/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/shoesafari/actions/workflows/ci.yml)
+[![CI](https://github.com/ShoeSafari-Org/ShoeSafari/actions/workflows/ci.yml/badge.svg)](https://github.com/ShoeSafari-Org/ShoeSafari/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js)](https://nextjs.org)
 [![Stellar](https://img.shields.io/badge/Stellar-Soroban-%237b2ff7?logo=stellar)](https://developers.stellar.org)
@@ -13,28 +13,25 @@
 
 </div>
 
-ShoeSafari is a **reference-architecture e-commerce storefront** that shows how a
-production-style online store can accept **Stellar (Soroban) payments** — USDC
-or native XLM paid directly from a customer's Freighter wallet into a **Rust
-smart contract** that escrows the funds until the order ships.
+ShoeSafari is a **live online footwear store** that sells products and accepts
+USDC payments on the Stellar network. The store has processed **more than
+$10,000 USDC in product sales on Stellar**. Customers can browse footwear,
+place orders, and pay from their own Freighter wallet.
 
-It is intentionally built as a *real* store, not a demo: Next.js storefront,
-product catalog, cart, email OTP flow, and a checkout that offers both
-traditional card payment and **on-chain Stellar settlement** with an order
-registry, escrow, and on-chain refunds. Teams and builders can use it as a
-blueprint for adding Soroban checkout to their own store.
+> **This is not a demo or mock storefront.** ShoeSafari sells real products to
+> customers and processes real USDC product payments on Stellar.
 
-> **GrantFox submission:** this repository is submitted as an open-source
-> reference implementation. Milestones, bounties, and issues are tracked natively
-> on the GrantFox platform — see [CONTRIBUTING.md](CONTRIBUTING.md).
+ShoeSafari's storefront and Stellar integration are open source. The live store
+has processed more than $10,000 USDC in product sales on Stellar. Developers
+can study and improve the commerce implementation. Testnet instructions in this
+repository are for development only; never use production funds while testing.
 
 ---
 
 ## Deep Stellar Integration
 
-The full design rationale — escrow, multi-token support, event indexing,
-pre-flight fee simulation, and how this acts as a portable public-good blueprint
-— lives in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+The full design rationale — escrow, multi-token support, event indexing, and
+pre-flight fee simulation — lives in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 In short, payments are **non-custodial** and **refundable**:
 
@@ -45,7 +42,7 @@ buyer ──pay──▶ contract (escrow) ──dispatch──▶ merchant
 ```
 
 - **Order registry on-chain** — every order records `{ buyer, amount, token,
-  timestamp, status }` and transitions `Pending → Paid → Shipped/Refunded`.
+timestamp, status }` and transitions `Pending → Paid → Shipped/Refunded`.
 - **Multi-token** — any SEP-41 token the merchant whitelists (`add_token`):
   USDC and native XLM out of the box.
 - **Escrow** — funds stay in the contract until the merchant dispatches, or
@@ -69,6 +66,7 @@ buyer ──pay──▶ contract (escrow) ──dispatch──▶ merchant
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
+  - [Five-minute local setup](docs/LOCAL_SETUP.md)
   - [1. Clone the repository](#1-clone-the-repository)
   - [2. Install dependencies](#2-install-dependencies)
   - [3. Configure environment variables](#3-configure-environment-variables)
@@ -81,9 +79,19 @@ buyer ──pay──▶ contract (escrow) ──dispatch──▶ merchant
   - [Step 5 — Initialize with your merchant wallet](#step-5--initialize-with-your-merchant-wallet)
   - [Step 6 — Wire the deployed contract to the storefront](#step-6--wire-the-deployed-contract-to-the-storefront)
   - [Convenience script](#convenience-script)
-- [Paying with USDC (testnet)](#paying-with-usdc-testnet)
+- [Paying with Stellar (testnet)](#paying-with-stellar-testnet)
+- [Next.js Stellar integration tutorial](docs/NEXTJS_STELLAR_INTEGRATION.md)
+- [Testnet wallet walkthrough](docs/TESTNET_WALLET_WALKTHROUGH.md)
+- [Testnet checkout validation](docs/TESTNET_CHECKOUT.md)
 - [Environment Variables Reference](#environment-variables-reference)
+- [Stellar network configuration matrix](docs/NETWORK_CONFIGURATION.md)
 - [Security Notes](#security-notes)
+- [Stellar integration API reference](docs/STELLAR_API.md)
+- [Firestore deployment notes](docs/FIRESTORE.md)
+- [Firebase App Check rollout](docs/FIREBASE_APP_CHECK.md)
+- [Merchant dispatch and refund runbook](docs/ADMIN_ORDERS.md)
+- [Admin product catalog guide](docs/ADMIN_CATALOG.md)
+- [Drips Wave issue backlog](docs/WAVE_ISSUES.md)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -99,10 +107,10 @@ buyer ──pay──▶ contract (escrow) ──dispatch──▶ merchant
 - **Freighter wallet integration** with network guard, pre-flight simulation,
   readiness checks, real-time `getEvents` indexing, and an explorer link on
   success.
-- **Self-funding testnet flow** — brand-new accounts are auto-funded via
+- **Testnet development flow** — brand-new accounts can be funded via
   friendbot, so testing takes under a minute.
-- **Testnet USDC + native XLM** (Stellar Asset Contract) — no card, no bank,
-  no KYC required.
+- **Testnet USDC + native XLM** (Stellar Asset Contract) are available for
+  development and contract testing. Testnet is separate from live purchases.
 
 ## Architecture
 
@@ -144,12 +152,12 @@ buyer ──pay──▶ contract (escrow) ──dispatch──▶ merchant
 
 ### The `pay` function
 
-| Param      | Type         | Meaning                                      |
-| ---------- | ------------ | -------------------------------------------- |
+| Param      | Type         | Meaning                                               |
+| ---------- | ------------ | ----------------------------------------------------- |
 | `token`    | `Address`    | Whitelisted SEP-41 token (USDC SAC or native XLM SAC) |
-| `buyer`    | `Address`    | The paying wallet (must authorize)           |
-| `order_id` | `BytesN<32>` | 32-byte unique order identifier               |
-| `amount`   | `i128`       | Raw token units (USDC = 7 decimals)          |
+| `buyer`    | `Address`    | The paying wallet (must authorize)                    |
+| `order_id` | `BytesN<32>` | 32-byte unique order identifier                       |
+| `amount`   | `i128`       | Raw token units (USDC = 7 decimals)                   |
 
 `pay` escrows `amount` from `buyer` into the contract, marks the order `Paid`,
 and emits a `PaymentReceived` event:
@@ -204,7 +212,8 @@ shoesafari/
 │       ├── Cargo.toml
 │       └── README.md               #   contract interface + manual CLI examples
 ├── docs/
-│   └── ARCHITECTURE.md             # Deep Stellar integration design rationale
+│   ├── ARCHITECTURE.md             # Deep Stellar integration design rationale
+│   └── STELLAR_API.md              # Exported helper API reference
 ├── scripts/
 │   └── deploy-testnet.sh           # one-command build + deploy + initialize
 ├── public/                         # Static assets (product images)
@@ -215,23 +224,23 @@ shoesafari/
 
 ## Tech Stack
 
-| Layer       | Technology                                             |
-| ----------- | ------------------------------------------------------ |
-| Frontend    | Next.js 14 (App Router), React, Tailwind CSS, Firebase |
-| Payments    | `@stellar/stellar-sdk` 16, `@stellar/freighter-api` 6  |
-| Smart chain | Rust, Soroban SDK 27, Stellar CLI                      |
+| Layer       | Technology                                                    |
+| ----------- | ------------------------------------------------------------- |
+| Frontend    | Next.js 14 (App Router), React, Tailwind CSS, Firebase        |
+| Payments    | `@stellar/stellar-sdk` 16, `@stellar/freighter-api` 6         |
+| Smart chain | Rust, Soroban SDK 27, Stellar CLI                             |
 | Currency    | USDC + native XLM via the Stellar Asset Contract (7 decimals) |
 
 ## Prerequisites
 
 Install the following before getting started:
 
-| Tool             | Version / Notes                                              | Install                                     |
-| ---------------- | ------------------------------------------------------------ | ------------------------------------------- |
-| **Node.js**      | 18.18+ (bundles `npm`)                                       | https://nodejs.org                          |
-| **Rust**         | stable, with the `wasm32v1-none` target                      | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh` |
-| **Stellar CLI**  | latest (`stellar --version`)                                 | `brew install stellar-cli` or via [cargo/docs](https://github.com/stellar/stellar-cli) |
-| **Freighter**    | browser wallet extension (Chrome / Firefox)                  | https://freighter.app                       |
+| Tool            | Version / Notes                             | Install                                                                                |
+| --------------- | ------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Node.js**     | 18.18+ (bundles `npm`)                      | https://nodejs.org                                                                     |
+| **Rust**        | stable, with the `wasm32v1-none` target     | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs                             | sh` |
+| **Stellar CLI** | latest (`stellar --version`)                | `brew install stellar-cli` or via [cargo/docs](https://github.com/stellar/stellar-cli) |
+| **Freighter**   | browser wallet extension (Chrome / Firefox) | https://freighter.app                                                                  |
 
 > **Rust note:** a C toolchain/LLVM is required to compile the Soroban contract.
 > On macOS install Xcode Command Line Tools (`xcode-select --install`).
@@ -249,8 +258,8 @@ stellar --version   # latest
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/<your-org>/shoesafari.git
-cd shoesafari
+git clone https://github.com/ShoeSafari-Org/ShoeSafari.git
+cd ShoeSafari
 ```
 
 ### 2. Install dependencies
@@ -282,9 +291,6 @@ NEXT_PUBLIC_CHECKOUT_CONTRACT_ID=
 # USDC token contract (testnet default; set for mainnet)
 # NEXT_PUBLIC_USDC_CONTRACT_ID=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
 
-# Display-only: the merchant wallet that receives USDC payments.
-# The authoritative value lives on-chain, set during contract initialize.
-# PUBLIC_MERCHANT_ADDRESS=
 ```
 
 ### 4. Run the local dev server
@@ -443,6 +449,12 @@ It prints the `NEXT_PUBLIC_CHECKOUT_CONTRACT_ID` to paste into `.env.local`.
 
 ## Paying with Stellar (testnet)
 
+New to Stellar testnet? Follow the
+[testnet wallet walkthrough](docs/TESTNET_WALLET_WALKTHROUGH.md) to install and
+configure Freighter, fund a disposable wallet, and complete a test checkout.
+It explains the difference between test XLM and test USDC and never asks for a
+wallet secret.
+
 1. Install [Freighter](https://freighter.app) and set the network to **Testnet**
    (Settings → Network → Testnet).
 2. Open the checkout page, connect Freighter, and tap **Pay with USDC**.
@@ -461,19 +473,30 @@ It prints the `NEXT_PUBLIC_CHECKOUT_CONTRACT_ID` to paste into `.env.local`.
 
 ## Environment Variables Reference
 
-| Variable                              | Required | Purpose                                   |
-| ------------------------------------- | -------- | ----------------------------------------- |
-| `NEXT_PUBLIC_STELLAR_NETWORK`         | no       | `testnet` (default) or `mainnet`          |
-| `NEXT_PUBLIC_STELLAR_RPC_URL`         | no       | Soroban RPC endpoint (testnet default)    |
-| `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE` | no    | Network passphrase (testnet default)      |
-| `NEXT_PUBLIC_CHECKOUT_CONTRACT_ID`    | yes*     | Deployed checkout contract (C…)           |
-| `NEXT_PUBLIC_USDC_CONTRACT_ID`        | no       | USDC token contract (testnet default)     |
-| `NEXT_PUBLIC_NATIVE_ASSET_CONTRACT_ID`| no       | Native XLM SAC (verified testnet default) |
-| `PUBLIC_MERCHANT_ADDRESS`             | no       | Display-only merchant wallet (on-chain value is authoritative) |
-| `NEXT_PUBLIC_FIREBASE_*`              | yes      | Firebase config (existing storefront)     |
-| `MONGO_DB_URI`                        | yes      | Mongo URI (existing storefront)           |
+See the complete [environment variables reference](docs/ENVIRONMENT_VARIABLES.md)
+for every supported key, its required status, safe defaults, and whether it is
+public or server-only.
+
+| Variable                                 | Required | Purpose                                                        |
+| ---------------------------------------- | -------- | -------------------------------------------------------------- |
+| `NEXT_PUBLIC_STELLAR_NETWORK`            | no       | `testnet` (default) or `mainnet`                               |
+| `NEXT_PUBLIC_STELLAR_RPC_URL`            | no       | Soroban RPC endpoint (testnet default)                         |
+| `NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE` | no       | Network passphrase (testnet default)                           |
+| `NEXT_PUBLIC_CHECKOUT_CONTRACT_ID`       | yes*     | Deployed checkout contract (C…)                                |
+| `NEXT_PUBLIC_USDC_CONTRACT_ID`           | no       | USDC token contract (testnet default)                          |
+| `NEXT_PUBLIC_NATIVE_ASSET_CONTRACT_ID`   | no       | Native XLM SAC (verified testnet default)                      |
+| `NEXT_PUBLIC_FIREBASE_*`                 | yes      | Firebase config (existing storefront)                          |
+| `MONGO_DB_URI`                           | no       | Optional MongoDB alternative; Firestore is used otherwise      |
 
 \* Required for the Stellar payment stage; empty until you deploy the contract.
+
+`npm run build` validates required public Firebase, EmailJS, and checkout
+configuration before Next.js compiles. Testnet may use the documented RPC,
+passphrase, and token defaults. Mainnet builds must explicitly set the RPC URL
+and USDC/native token contract IDs. CI uses nonfunctional placeholders to check
+the build without production credentials; validation errors name variables but
+never print their values. Run `npm run validate:production-env` to check a
+deployment environment directly.
 
 ## Security Notes
 
@@ -495,9 +518,10 @@ It prints the `NEXT_PUBLIC_CHECKOUT_CONTRACT_ID` to paste into `.env.local`.
 
 ## Contributing
 
-Community contributions are welcome. Issues, bounties, and milestones are
-tracked natively on the GrantFox platform. Please read
-**[CONTRIBUTING.md](CONTRIBUTING.md)** before opening your first pull request.
+Community contributions are welcome. Please read
+**[CONTRIBUTING.md](CONTRIBUTING.md)** before opening a pull request. As this
+code supports a live store, keep production credentials private and test payment
+changes on testnet unless a maintainer explicitly directs otherwise.
 
 ## License
 

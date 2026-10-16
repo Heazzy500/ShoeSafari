@@ -1,74 +1,97 @@
-"use client"
-import { createContext, useContext, useEffect, useState } from "react";
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { restoreCart } from "../lib/cartStorage";
+import { isProductAvailable } from "../lib/productAvailability";
+import { isProductPurchasable } from "../lib/productCatalog";
 
 const CartContext = createContext();
 
 export const useCart = () => useContext(CartContext);
 
+const getCartSummary = (items) => ({
+  itemCount: items.length,
+  totalPrice: items.reduce((total, item) => total + Number(item.price), 0),
+});
+
 export const CartProvider = ({ children }) => {
   const [cartItems, setCartItems] = useState([]);
   const [itemCount, setItemCount] = useState(0);
   const [totalPrice, setTotalPrice] = useState(0);
+  const [cartRecoveryMessage, setCartRecoveryMessage] = useState("");
+  const cartItemsRef = useRef([]);
 
-  useEffect(() => {
-    const storedCartItems = JSON.parse(localStorage.getItem("cartItems")) || [];
-    const storedItemCount = parseInt(localStorage.getItem("itemCount")) || 0;
-    const storedTotalPrice =
-      parseFloat(localStorage.getItem("totalPrice")) || 0;
-
-    setCartItems(storedCartItems);
-    setItemCount(storedItemCount);
-    setTotalPrice(storedTotalPrice);
+  const updateCartState = useCallback((items) => {
+    const purchasableItems = items.filter(
+      (item) => isProductAvailable(item) && isProductPurchasable(item),
+    );
+    const summary = getCartSummary(purchasableItems);
+    cartItemsRef.current = purchasableItems;
+    setCartItems(purchasableItems);
+    setItemCount(summary.itemCount);
+    setTotalPrice(summary.totalPrice);
+    return purchasableItems;
   }, []);
 
+  const persistCart = (items) => {
+    const summary = getCartSummary(items);
+    localStorage.setItem("cartItems", JSON.stringify(items));
+    localStorage.setItem("itemCount", String(summary.itemCount));
+    localStorage.setItem("totalPrice", String(summary.totalPrice));
+  };
+
+  const restoreLatestCart = useCallback(() => {
+    const restored = restoreCart(window.localStorage);
+    const items = updateCartState(restored.items);
+    if (restored.recovered || items.length !== restored.items.length) {
+      setCartRecoveryMessage(
+        "Invalid or unavailable saved cart items were removed. Your remaining cart is ready.",
+      );
+    }
+  }, [updateCartState]);
+
+  useEffect(() => {
+    restoreLatestCart();
+
+    const handleStorage = (event) => {
+      if (event.storageArea && event.storageArea !== window.localStorage) return;
+      if (event.key !== null && event.key !== "cartItems") return;
+
+      // Read current storage so a delayed event cannot replace a newer cart.
+      restoreLatestCart();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [restoreLatestCart]);
+
   const addToCart = (product) => {
-    setCartItems((prevCartItems) => {
-      const updatedCartItems = [...prevCartItems, product];
-      localStorage.setItem("cartItems", JSON.stringify(updatedCartItems));
-      return updatedCartItems;
-    });
-    setItemCount((prevItemCount) => {
-      const newItemCount = prevItemCount + 1;
-      localStorage.setItem("itemCount", newItemCount.toString());
-      return newItemCount;
-    });
-    setTotalPrice((prevTotalPrice) => {
-      const newTotalPrice = prevTotalPrice + product.price;
-      localStorage.setItem("totalPrice", newTotalPrice.toString());
-      return newTotalPrice;
-    });
+    if (!isProductAvailable(product) || !isProductPurchasable(product)) return false;
+    const updatedItems = [...cartItemsRef.current, product];
+    updateCartState(updatedItems);
+    persistCart(updatedItems);
+    return true;
   };
 
   const removeFromCart = (product) => {
-    setCartItems((prevCartItems) => {
-      const index = prevCartItems.findIndex((item) => item.id === product.id);
-      if (index === -1) return prevCartItems; // If item not found, return previous cart items
+    const index = cartItemsRef.current.findIndex((item) => item.id === product.id);
+    if (index === -1) return;
 
-      const updatedCartItems = [...prevCartItems];
-      updatedCartItems.splice(index, 1); // Remove the item from the array
-      localStorage.setItem("cartItems", JSON.stringify(updatedCartItems));
-      return updatedCartItems;
-    });
-
-    setItemCount((prevItemCount) => {
-      const newItemCount = prevItemCount - 1;
-      localStorage.setItem("itemCount", newItemCount.toString());
-      return newItemCount;
-    });
-
-    setTotalPrice((prevTotalPrice) => {
-      const removedItem = cartItems.find((item) => item.id === product.id);
-      if (!removedItem) return prevTotalPrice; // If item not found, return previous total price
-      const newTotalPrice = prevTotalPrice - removedItem.price;
-      localStorage.setItem("totalPrice", newTotalPrice.toString());
-      return newTotalPrice;
-    });
+    const updatedItems = [...cartItemsRef.current];
+    updatedItems.splice(index, 1);
+    updateCartState(updatedItems);
+    persistCart(updatedItems);
   };
 
   const clearCart = () => {
-    setCartItems([]);
-    setItemCount(0);
-    setTotalPrice(0);
+    updateCartState([]);
     localStorage.removeItem("cartItems");
     localStorage.removeItem("itemCount");
     localStorage.removeItem("totalPrice");
@@ -80,6 +103,7 @@ export const CartProvider = ({ children }) => {
         cartItems,
         itemCount,
         totalPrice,
+        cartRecoveryMessage,
         addToCart,
         removeFromCart,
         clearCart,

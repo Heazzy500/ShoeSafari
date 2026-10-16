@@ -1,12 +1,12 @@
 {
   "name": "shoesafari",
   "version": "1.0.0",
-  "description": "E-commerce platform with Stellar blockchain payments - showcasing crypto integration in web commerce",
+  "description": "Live online footwear store selling real products with Stellar USDC payments; over $10,000 USDC in product sales processed",
   "private": false,
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/shoesafari.git"
+    "url": "https://github.com/ShoeSafari-Org/ShoeSafari.git"
   },
   "keywords": [
     "ecommerce",
@@ -20,13 +20,22 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "prebuild": "npm run validate:production-env",
+    "validate:production-env": "node scripts/validate-production-env.mjs",
     "start": "next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "type-check": "tsc --noEmit --skipLibCheck",
+    "check:checkout-interface": "node scripts/check-checkout-interface.mjs",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\"",
     "test": "vitest run",
+    "test:rules": "npm run test:rules:firestore && npm run test:rules:storage",
+    "test:rules:firestore": "npx --yes firebase-tools@13.35.1 --config firebase.firestore.json --project demo-shoesafari emulators:exec --only firestore \"npx vitest run --config vitest.rules.config.js tests/rules/firestore.rules.test.js\"",
+    "test:rules:storage": "npx --yes firebase-tools@13.35.1 --config firebase.storage.json --project demo-shoesafari emulators:exec --only storage \"npx vitest run --config vitest.rules.config.js tests/rules/storage.rules.test.js tests/rules/storage-authorization.rules.test.js\"",
+    "test:e2e": "playwright test",
+    "test:e2e:accessibility": "playwright test e2e/accessibility.spec.tsx",
+    "test:e2e:install": "playwright install chromium",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
@@ -39,6 +48,7 @@
     "@stellar/stellar-sdk": "^16.2.0",
     "@vercel/og": "^0.6.2",
     "firebase": "^10.12.4",
+    "firebase-admin": "13.5.0",
     "fs": "^0.0.1-security",
     "mongodb": "^6.8.0",
     "mongoose": "^8.5.1",
@@ -52,10 +62,13 @@
     "sharp": "^0.33.4"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^14.2.0",
+    "axe-core": "^4.9.1",
     "@types/next": "^9.0.0",
-    "@types/node": "20.14.11",
+    "@types/node": "^20.19.0",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@vitejs/plugin-react": "^4.2.0",

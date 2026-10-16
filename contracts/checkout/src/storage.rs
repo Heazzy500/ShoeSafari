@@ -15,6 +15,17 @@ pub enum DataKey {
     Order(BytesN<32>),
     /// Whether the given SEP-41 token contract is accepted by the merchant.
     TokenAllowed(Address),
+    /// Optional high-value release approval threshold and second signer per token.
+    ApprovalPolicy(Address),
+}
+
+#[soroban_sdk::contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ApprovalPolicy {
+    /// Minimum raw token amount that requires the second signer.
+    pub threshold: i128,
+    /// Additional address that must authorize dispatch or refund.
+    pub approver: Address,
 }
 
 pub fn has_admin(env: &Env) -> bool {
@@ -38,7 +49,10 @@ pub fn set_admin(env: &Env, admin: &Address) {
 }
 
 pub fn get_order(env: &Env, order_id: &BytesN<32>) -> Option<Order> {
-    let order: Option<Order> = env.storage().persistent().get(&DataKey::Order(order_id.clone()));
+    let order: Option<Order> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Order(order_id.clone()));
     if order.is_some() {
         extend_ttl(env, &DataKey::Order(order_id.clone()));
     }
@@ -46,7 +60,9 @@ pub fn get_order(env: &Env, order_id: &BytesN<32>) -> Option<Order> {
 }
 
 pub fn set_order(env: &Env, order_id: &BytesN<32>, order: &Order) {
-    env.storage().persistent().set(&DataKey::Order(order_id.clone()), order);
+    env.storage()
+        .persistent()
+        .set(&DataKey::Order(order_id.clone()), order);
     extend_ttl(env, &DataKey::Order(order_id.clone()));
 }
 
@@ -64,6 +80,27 @@ pub fn set_token_allowed(env: &Env, token: &Address, allowed: bool) {
     } else {
         env.storage().persistent().remove(&key);
     }
+}
+
+pub fn get_approval_policy(env: &Env, token: &Address) -> Option<ApprovalPolicy> {
+    let key = DataKey::ApprovalPolicy(token.clone());
+    let policy = env.storage().persistent().get(&key);
+    if policy.is_some() {
+        extend_ttl(env, &key);
+    }
+    policy
+}
+
+pub fn set_approval_policy(env: &Env, token: &Address, policy: &ApprovalPolicy) {
+    let key = DataKey::ApprovalPolicy(token.clone());
+    env.storage().persistent().set(&key, policy);
+    extend_ttl(env, &key);
+}
+
+pub fn remove_approval_policy(env: &Env, token: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::ApprovalPolicy(token.clone()));
 }
 
 pub fn extend_ttl(env: &Env, key: &DataKey) {
